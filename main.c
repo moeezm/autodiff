@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <assert.h>
 
 typedef struct CompNode CompNode;
 typedef struct A A;
@@ -200,6 +201,97 @@ void backwardPass(CompGraph* cg, CompNode* start) {
 	}
 }
 
+void postfixToGraph(char* str, CompGraph* cg, double init_vals[]) {
+	// operations +, -, *, -
+	// lowercase letter variables 
+	// functions E, L, S, C (exp,log,sin,cos)
+	// not the most efficient, doesn't reuse intermediate steps
+	CompNode* vars[26]; 
+	for (int i = 0; i < 26; i++) vars[i] = NULL;
+	CompNode* stack[100];
+	int sp = 0; // stack pointer
+	for (int i = 0; str[i] != '\0'; i++) {
+		if (str[i] == ' ') continue;
+		printf("%c %d\n", str[i], sp);
+		char c = str[i];
+		if ('a' <= c && c <= 'z') {
+			CompNode* x;
+			if (vars[c-'a'] == NULL) {
+				x = malloc(sizeof(CompNode));
+				initCompNode(x);
+				vars[c-'a'] = x;
+			}
+			x = vars[c-'a'];
+			stack[sp++] = x;
+		}
+		else if (c == '+' || c == '-' || c == '*' || c == '/') {
+			CompNode* x = malloc(sizeof(CompNode));
+			CompNode* n2 = stack[--sp];
+			CompNode* n1 = stack[--sp];
+			initCompNode(x);
+			x->children.push_back(&x->children, n1);
+			x->children.push_back(&x->children, n2);
+			n1->parents.push_back(&n1->parents, x);
+			n2->parents.push_back(&n2->parents, x);
+			switch (c) {
+				case '+':
+					x->type = ADD;
+					break;
+				case '-':
+					x->type = SUB;
+					break;
+				case '*':
+					x->type = MUL;
+					break;
+				case '/':
+					x->type = DIV;
+					break;
+			}
+			stack[sp++] = x;
+		}
+		else {
+			CompNode* x = malloc(sizeof(CompNode));
+			CompNode* n = stack[--sp];
+			initCompNode(x);
+			x->children.push_back(&x->children, n);
+			n->parents.push_back(&n->parents, x);
+			switch (c) {
+				case 'E':
+					printf("ryo\n");
+					x->type = EXP;
+					break;
+				case 'L':
+					x->type = LOG;
+					break; 
+				case 'S':
+					x->type = SIN;
+					break; 
+				case 'C':
+					x->type = COS;
+					break; 
+			}
+			stack[sp++] = x;
+		}
+	}
+	printf("hi\n");
+	CompNode* res = stack[0];
+	for (int i = 0; i < 26; i++) {
+		if (vars[i] != NULL) {
+			vars[i]->val = init_vals[i];
+			cg->inputs.push_back(&cg->inputs, vars[i]);
+		}
+	}
+	printf("poop\n");
+	forwardPass(cg);
+	printf("%f\n", res->val);
+	printf("bocchi\n");
+	backwardPass(cg, res);
+	for (int i = 0; i < 26; i++) {
+		if (vars[i] == NULL) continue;
+		printf("partial w.r.t %c is %f\n", (char)i + 'a', vars[i]->deriv);
+	}
+}
+
 void test_queue() {
 	A tst;
 	ainit(&tst);
@@ -209,6 +301,32 @@ void test_queue() {
 	printf("%d\n", tst.head); 
 }
 
+void simple_postfix_test() {
+	char expr[] = "a b +";
+	double init_values[26];
+	CompGraph cg;
+	initCompGraph(&cg);
+	init_values[0] = 1; init_values[1] = 2;
+	for (int i = 2; i < 26; i++) init_values[i] = 0;
+	postfixToGraph(expr, &cg, init_values);
+}
+
+int main() {
+	// do the function (e^sin(xy))*cos(xy) + x + y at x=2, y=1
+	// check against wolframalpha:
+	// https://www.wolframalpha.com/input?i=gradient+of+%28e%5Esin%28xy%29%29*cos%28xy%29+%2B+x+%2B+y+at+x%3D2%2C+y%3D1
+	//char expr[] = "x E";
+	char expr[] = "x y * S E x y * C * x + y +";
+	double init_values[26];
+	for (int i = 0; i < 26; i++) init_values[0] = 0;
+	init_values[23] = 2; init_values[24] = 1;
+	CompGraph cg;
+	initCompGraph(&cg);
+	postfixToGraph(expr, &cg, init_values);
+	return 0;
+}
+
+// here lie primitive technology (i.e. pre postfixToGraph)
 void simple_autodiff_test() {
 	// sin(x)
 	CompGraph cg;
@@ -232,7 +350,7 @@ void simple_autodiff_test() {
 	printf("%f\n", ex.val);
 	printf("%f\n", x.deriv);
 }
-int main() {
+void long_autodiff_test() {
 	// do the function (e^sin(xy))*cos(xy) + x + y at x=2, y=1
 	// check against wolframalpha:
 	// https://www.wolframalpha.com/input?i=gradient+of+%28e%5Esin%28xy%29%29*cos%28xy%29+%2B+x+%2B+y+at+x%3D2%2C+y%3D1
@@ -311,5 +429,4 @@ int main() {
 	backwardPass(&cg, &final);
 	printf("%f\n", x.deriv);
 	printf("%f\n", y.deriv);
-	return 0;
 }
